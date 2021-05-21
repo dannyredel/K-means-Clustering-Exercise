@@ -1,0 +1,312 @@
+---
+title: "Tarea 2: Big Data y Machine Learning"
+author: "Daniel Redel"
+date: "5/20/2021"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(factoextra)
+#install.packages("fpc") <- para calcular el calinksi
+library(fpc)
+#install.packages("ClusterR") <- para calcular Silhouette
+library(ClusterR)
+library(gridExtra)
+
+```
+
+
+```{r, include=FALSE}
+
+#Importamos la base de datos:
+library(readr)
+credit_data <- read_csv("C:/Users/danny/Google Drive/Comercial UC/Big Data & Machine Learning/Tareas/credit-data.csv")
+head(credit_data)
+
+#Definimos como numéricas las siguientes variables: age, duration y amount. Construimos la tabla descriptiva para las variables numéricas:
+numericas <- credit_data %>% 
+  select(duration, amount, age)
+head(numericas)
+
+```
+
+## A. Modelo k-means con 2 Clusters (k=2)
+1. En primer lugar, se hace necesario normalizar las variables, ya que cada variable opera bajo escalas distintas. Usaremos dos métodos de normalización y veremos cómo cambian los resultados finales según el método que se use:
+$$
+Norm_{1}=\frac{x-min(x)}{max(x)-min(x)}
+$$
+$$
+Norm_{2}=\frac{x-mean(x)}{sd(x)}
+$$
+
+
+```{r, include=FALSE}
+
+##Generamos funcion normalizadora N°1
+nor <- function(x) {
+  (x-min(x))/(max(x)-min(x))
+}
+##Generamos funcion normalizadora N°2
+nor1 <- function(x) {
+  (x-mean(x))/(sd(x))
+}
+
+##Normalizamos las Variables Numéricas:
+nnumericas <- as.data.frame(lapply(numericas[,1:3], nor))
+nnumericas1 <- as.data.frame(lapply(numericas[,1:3], nor1))
+
+##Podemos colapsar todo en una database
+normaldata <- cbind(numericas, nage=nnumericas$age, nduration=nnumericas$duration, namount=nnumericas$amount, n1age=nnumericas1$age, n1duration=nnumericas1$duration, n1amount=nnumericas1$amount)
+
+##Base final:
+data <- normaldata
+
+
+```
+
+2. Encontramos los dos clusters a partir del método aprendizaje no-supervisado k-means. La siguiente tabla reporta las características principales de cada cluster para cada método de normalización:
+```{r, echo=FALSE}
+
+##Clusterizamos solo en base a las normalizadas:
+k2 <- kmeans(data[,4:6], 2, nstart = 25)
+k21 <- kmeans(data[,7:9], 2, nstart = 25)
+
+##Generamos la variable cluster y la juntamos
+cluster1 <- k2$cluster
+cluster2 <- k21$cluster
+data1 <- cbind(data, cluster1, cluster2)
+
+##Summary
+data1 %>% 
+  group_by(cluster1) %>% 
+  summarise(age=mean(age), amount=mean(amount), duration=mean(duration)) %>% 
+  knitr::kable(digits = 1)
+
+
+data1 %>% 
+  group_by(cluster2) %>% 
+  summarise(age=mean(age), amount=mean(amount), duration=mean(duration)) %>% 
+  knitr::kable(digits = 1)
+
+
+```
+
+3. Gráficamente, el método k-means estima los siguientes grupos:\
+
+```{r, echo=FALSE}
+
+##Visualization
+cviz1 <- fviz_cluster(k2, data=data, geom="point", ggtheme = theme_minimal())+
+  ggtitle("K-means (k=2)") +
+  labs(subtitle = "Metodo de Normalización N°1")
+
+cviz2 <- fviz_cluster(k21, data=data, geom="point", ggtheme = theme_minimal())+
+  ggtitle("K-means (k=2)") +
+  labs(subtitle = "Metodo de Normalización N°2")
+
+
+##Todo junto
+grid.arrange(cviz1, cviz2, ncol=1)
+
+
+```
+\
+Claramente, el método 2 de normalización genera menor solapamiento entre los clusters.
+
+## B. Coeficiente de Silhouette 
+1. Evaluamos la eficiencia de los clusters encontrados usando el coeficiente de silhouette:\
+```{r, echo=FALSE}
+
+
+##############################
+###Metodo Normalizacion N°1###
+##############################
+
+silueta1 <- Optimal_Clusters_KMeans(data[,4:6], max_clusters=7, plot_clusters = FALSE, criterion = "silhouette")
+##The higher Silhouette Score gives us an indication of an optimal number of clusters.
+datas1 <- c(silueta1)
+kcluster1 <- c(1:7)
+silhouette1 <- data.frame(kcluster1, datas1)
+names(silhouette1) <- c("cluster","score")
+
+##############################
+###Metodo Normalizacion N°2###
+##############################
+silueta2 <- Optimal_Clusters_KMeans(data[,7:9], max_clusters=7, plot_clusters = FALSE, criterion = "silhouette")
+##The higher Silhouette Score gives us an indication of an optimal number of clusters.
+datas2 <- c(silueta2)
+kcluster2 <- c(1:7)
+silhouette2 <- data.frame(kcluster2, datas2)
+names(silhouette2) <- c("cluster","score")
+
+##Graficamos con Método de Normalización N°1
+silu1 <- fviz_nbclust(data[,4:6], kmeans, method = "silhouette", linecolor="#00BFC4")+
+  ggtitle("Coeficiente Silhouette")+
+  labs(subtitle = "Metodo de Normalización N°1")
+
+##Graficamos con Método de Normalización N°2
+silu2 <- fviz_nbclust(data[,7:9], kmeans, method = "silhouette", linecolor="#00BFC4")+
+  ggtitle("Silhouette Criteria") +
+  labs(subtitle = "Metodo de Normalización N°2")
+
+
+##GRAFICO FINAL
+grid.arrange(silu1, silu2, nrow=2)
+
+```
+\
+Bajo el método 1 de normalización de variables, el coeficiente de silhouette alcanza $0.339$. Luego, bajo este criterio, el número de cluster óptimo es 3, ya que el coeficiente máximo es $0.357$. En cambio, con el método 2 de normalización, el número óptimo de cluster es 2 (coeficiente es igual a $0.375$).
+
+## C. Calinski-Harabaz Score
+1. La eficiencia de los cluster podemos evaluarla también bajo el criterio Calinski-Harabaz:
+```{r, echo=FALSE}
+
+##Calculamos el Calinski-Harabaz Score:
+d1 <- round(calinhara(data[,4:6], k2$cluster), digits=1)
+d2 <- round(calinhara(data[,7:9], k21$cluster), digits=1)
+
+ch_score <- c(d1, d2)
+normalizacion <- c("método 1", "método 2")
+calintable <- data.frame(normalizacion, ch_score)
+calintable %>% 
+  knitr::kable(digits = 1)
+
+```
+
+## D. Encontrando el cluster k óptimo
+1. Estimaremos clusters hasta $k=7$ y evaluaremos cuál es el óptimo a partir de los distintos criterios (Silhouette o Calinski-Harabaz). Para cada método de normalización, visualizamos los respectivos clusters:
+```{r, echo=FALSE}
+
+##############################
+###Metodo Normalizacion N°1###
+##############################
+
+##Ploteamos para distintos k clusters
+k1 <- kmeans(data[,4:6], 1, nstart = 25)
+
+k2 <- kmeans(data[,4:6], 2, nstart = 25)
+k3 <- kmeans(data[,4:6], 3, nstart = 25)
+k4 <- kmeans(data[,4:6], 4, nstart = 25)
+k5 <- kmeans(data[,4:6], 5, nstart = 25)
+k6 <- kmeans(data[,4:6], 6, nstart = 25)
+k7 <- kmeans(data[,4:6], 7, nstart = 25)
+
+# plots to compare
+p1 <- fviz_cluster(k2, geom = "point", data = data) + ggtitle("k = 2")
+p2 <- fviz_cluster(k3, geom = "point",  data = data) + ggtitle("k = 3")
+p3 <- fviz_cluster(k4, geom = "point",  data = data) + ggtitle("k = 4")
+p4 <- fviz_cluster(k5, geom = "point",  data = data) + ggtitle("k = 5")
+p5 <- fviz_cluster(k6, geom = "point",  data = data) + ggtitle("k = 6")
+p6 <- fviz_cluster(k7, geom = "point",  data = data) + ggtitle("k = 7")
+
+##Visualizacion
+grid.arrange(p1, p2, p3, p4, p5, p6, nrow = 2, top="kmeans clustering (método 1)")
+
+
+##############################
+###Metodo Normalizacion N°2###
+##############################
+
+##Ploteamos para distintos k clusters
+k11 <- kmeans(data[,7:9], 1, nstart = 25)
+
+k21 <- kmeans(data[,7:9], 2, nstart = 25)
+k31 <- kmeans(data[,7:9], 3, nstart = 25)
+k41 <- kmeans(data[,7:9], 4, nstart = 25)
+k51 <- kmeans(data[,7:9], 5, nstart = 25)
+k61 <- kmeans(data[,7:9], 6, nstart = 25)
+k71 <- kmeans(data[,7:9], 7, nstart = 25)
+
+# plots to compare
+p11 <- fviz_cluster(k21, geom = "point", data = data) + ggtitle("k = 2")
+p21 <- fviz_cluster(k31, geom = "point",  data = data) + ggtitle("k = 3")
+p31 <- fviz_cluster(k41, geom = "point",  data = data) + ggtitle("k = 4")
+p41 <- fviz_cluster(k51, geom = "point",  data = data) + ggtitle("k = 5")
+p51 <- fviz_cluster(k61, geom = "point",  data = data) + ggtitle("k = 6")
+p61 <- fviz_cluster(k71, geom = "point",  data = data) + ggtitle("k = 7")
+
+##Visualizacion
+grid.arrange(p11, p21, p31, p41, p51, p61, nrow = 2, top="kmeans clustering (método 2)")
+
+
+
+```
+
+
+2. Graficamos los criterios Silhouette y Calinski-Harabaz conjuntamente para definir el número de $k$ clusters óptimo (según método de normalización):
+
+```{r, echo=FALSE}
+
+##############################
+###Metodo Normalizacion N°1###
+##############################
+
+##Calculamos el Calinski-Harabaz para cada k cluster
+ch1 <- round(calinhara(data[4:6], k1$cluster), digits=1)
+ch2 <- round(calinhara(data[4:6], k2$cluster), digits=1)
+ch3 <- round(calinhara(data[4:6], k3$cluster), digits=1)
+ch4 <- round(calinhara(data[4:6], k4$cluster), digits=1)
+ch5 <- round(calinhara(data[4:6], k5$cluster), digits=1)
+ch6 <- round(calinhara(data[4:6], k6$cluster), digits=1)
+ch7 <- round(calinhara(data[4:6], k7$cluster), digits=1)
+
+##Agrupamos todo en una base de datos
+calinski <- c(ch1, ch2, ch3, ch4, ch5, ch6, ch7)
+chdata <- data.frame(calinski)
+##Juntamos
+score <- cbind(silhouette1, chdata)
+names(score) <- c("cluster", "silhouette", "calinski")
+score[is.na(score)] <- 0
+
+
+##Gráfico Conjunto
+f1 <- ggplot(score, aes(x=cluster)) + 
+  geom_line(aes(y=calinski, color="Calinski")) +
+  geom_line(aes(y=silhouette*3000, color="Silhouette"))+
+  scale_y_continuous(sec.axis = sec_axis(~./3000, name = "Silhouette"))+
+  geom_vline(xintercept = 3, linetype=2, alpha=0.6)+
+  labs(colour="Criterio", title="Método 1 de Normalización", y="Calinksi")
+
+
+##############################
+###Metodo Normalizacion N°2###
+##############################
+
+##Calculamos el Calinski-Harabaz para cada k cluster
+ch11 <- round(calinhara(data[7:9], k11$cluster), digits=1)
+ch21 <- round(calinhara(data[7:9], k21$cluster), digits=1)
+ch31 <- round(calinhara(data[7:9], k31$cluster), digits=1)
+ch41 <- round(calinhara(data[7:9], k41$cluster), digits=1)
+ch51 <- round(calinhara(data[7:9], k51$cluster), digits=1)
+ch61 <- round(calinhara(data[7:9], k61$cluster), digits=1)
+ch71 <- round(calinhara(data[7:9], k71$cluster), digits=1)
+
+##Agrupamos todo en una base de datos
+calinski1 <- c(ch11, ch21, ch31, ch41, ch51, ch61, ch71)
+chdata1 <- data.frame(calinski1)
+##Juntamos
+score1 <- cbind(silhouette2, chdata1)
+names(score1) <- c("cluster", "silhouette", "calinski")
+score1[is.na(score1)] <- 0
+
+##Gráfico Conjunto
+f2 <- ggplot(score1, aes(x=cluster))+
+  geom_line(aes(y=calinski, color="Calinski")) +
+  geom_line(aes(y=silhouette*3000, color="Silhouette"))+
+  scale_y_continuous(sec.axis = sec_axis(~./3000, name = "Silhouette"))+
+  geom_vline(xintercept = 2, linetype=2, alpha=0.6)+
+  labs(colour="Criterio", title="Método 2 de Normalización", y="Calinksi")
+ 
+##Finalmente
+grid.arrange(f1, f2, nrow=2, top="Eficiencia de los Clusters")
+  
+
+
+```
+\
+Decimos entonces que, usando ambas métricas de eficiencia, el número de clusters óptimo es $k=3$ si usamos el método de normalización 1 y $k=2$ si usamos el método de normalización 2. 
